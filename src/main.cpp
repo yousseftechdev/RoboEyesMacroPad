@@ -91,7 +91,6 @@ struct Button
   bool stableState = HIGH;
   bool isDown = false;
   bool longFired = false;
-  bool suppressRelease = false;
 
   unsigned long lastChange = 0;
   unsigned long pressStart = 0;
@@ -179,6 +178,23 @@ enum Layer : uint8_t
 
 Layer layer = LAYER_MEDIA;
 
+// --- Face customization modes ---
+enum FaceeditMode
+{
+  FACE_EDIT_MOOD = 0,
+  FACE_EDIT_SPACE,
+  FACE_EDIT_RADIUS,
+  FACE_EDIT_HEIGHT,
+  FACE_EDIT_WIDTH,
+  FACE_EDIT_COUNT
+};
+FaceeditMode editMode = FACE_EDIT_MOOD;
+
+int currentSpace = 24;
+int currentRadius = 12;
+int currentHeight = 64;
+int currentWidth = 64;
+
 // --- Face states ---
 uint8_t faceMoods[] = {DEFAULT, HAPPY, TIRED, ANGRY};
 uint8_t faceMoodIdx = 0;
@@ -197,17 +213,140 @@ uint8_t restoreMood = DEFAULT;
 
 bool lastConnected = false;
 
-// --- Backlight ---
-void initBacklight()
+// --- Macro engine ---
+enum ActionType
 {
-  ledcSetup(1, 5000, 8);
-  ledcAttachPin(TFT_BL_PIN, 1);
-}
+  ACT_NONE = 0,
+  ACT_KEY,
+  ACT_MEDIA,
+  ACT_COMBO,
+  ACT_SET_MOOD,
+  ACT_FACE_MODE,
+  ACT_CYCLE_LAYER,
+  ACT_RESET_FACE
+};
 
-void setBacklight(uint8_t brightness)
+struct Macro
 {
-  ledcWrite(1, brightness);
-}
+  ActionType type;
+  uint16_t key;
+  const uint8_t *media;
+  uint16_t modifier;
+  char comboChar;
+  uint8_t mood; // 255 for no reaction mood
+  uint16_t moodMs;
+  uint8_t param;
+};
+
+// Helper macros to make the grid readable
+#define M_NONE {ACT_NONE, 0, nullptr, 0, 0, 255, 0, 0}
+#define M_KEY(k, m, ms) {ACT_KEY, k, nullptr, 0, 0, m, ms, 0}
+#define M_MEDIA(mk, m, ms) {ACT_MEDIA, 0, mk, 0, 0, m, ms, 0}
+#define M_COMBO(mod, c, m, ms) {ACT_COMBO, 0, nullptr, mod, c, m, ms, 0}
+#define M_SET_MOOD(idx) {ACT_SET_MOOD, 0, nullptr, 0, 0, 255, 0, idx}
+#define M_FACE_MODE(fm) {ACT_FACE_MODE, 0, nullptr, 0, 0, 255, 0, fm}
+#define M_CYCLE_LAYER {ACT_CYCLE_LAYER, 0, nullptr, 0, 0, 255, 0, 0}
+#define M_RESET_FACE {ACT_RESET_FACE, 0, nullptr, 0, 0, 255, 0, 0}
+
+// The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
+// The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
+Macro keyMap[LAYER_COUNT][5][3] = {
+    // LAYER_MEDIA
+    {
+        {
+            // Encoder Button
+            M_MEDIA(KEY_MEDIA_MUTE, HAPPY, 500),      // Press
+            M_CYCLE_LAYER,                            // Long Press
+            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 200) // Double Press
+        },
+        {
+            // Button 1
+            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 250), // Press
+            M_MEDIA(KEY_MEDIA_STOP, ANGRY, 250),       // Long Press
+            M_MEDIA(KEY_MEDIA_NEXT_TRACK, HAPPY, 250)  // Double Press
+        },
+        {
+            // Button 2
+            M_MEDIA(KEY_MEDIA_NEXT_TRACK, HAPPY, 250),     // Press
+            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, TIRED, 250), // Long Press
+            M_MEDIA(KEY_MEDIA_STOP, DEFAULT, 250)          // Double Press
+        },
+        {
+            // Button 3
+            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, HAPPY, 250), // Press
+            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, TIRED, 250),     // Long Press
+            M_MEDIA(KEY_MEDIA_MUTE, HAPPY, 250)            // Double Press
+        },
+        {
+            // Button 4
+            M_MEDIA(KEY_MEDIA_STOP, HAPPY, 250),            // Press
+            M_MEDIA(KEY_MEDIA_NEXT_TRACK, ANGRY, 250),      // Long Press
+            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, DEFAULT, 250) // Double Press
+        }},
+    // LAYER_KEYS
+    {
+        {
+            // Encoder Button
+            M_KEY(KEY_RETURN, HAPPY, 500), // Press
+            M_CYCLE_LAYER,                 // Long Press
+            M_KEY(' ', HAPPY, 200)         // Double Press
+        },
+        {
+            // Button 1
+            M_COMBO(MODIFIER_KEY, 'c', HAPPY, 250), // Press
+            M_COMBO(MODIFIER_KEY, 'x', ANGRY, 250), // Long Press
+            M_COMBO(MODIFIER_KEY, 'v', HAPPY, 250)  // Double Press
+        },
+        {
+            // Button 2
+            M_COMBO(MODIFIER_KEY, 'v', HAPPY, 250),  // Press
+            M_COMBO(MODIFIER_KEY, 'z', TIRED, 250),  // Long Press
+            M_COMBO(MODIFIER_KEY, 'y', DEFAULT, 250) // Double Press
+        },
+        {
+            // Button 3
+            M_COMBO(MODIFIER_KEY, 'z', HAPPY, 250), // Press
+            M_COMBO(MODIFIER_KEY, 'c', TIRED, 250), // Long Press
+            M_COMBO(MODIFIER_KEY, 'x', HAPPY, 250)  // Double Press
+        },
+        {
+            // Button 4
+            M_COMBO(MODIFIER_KEY, 'y', HAPPY, 250),  // Press
+            M_COMBO(MODIFIER_KEY, 'v', ANGRY, 250),  // Long Press
+            M_COMBO(MODIFIER_KEY, 'z', DEFAULT, 250) // Double Press
+        }},
+    // LAYER_FACE (Customization Engine)
+    {
+        {
+            // Encoder Button
+            M_NONE,        // Press
+            M_CYCLE_LAYER, // Long Press
+            M_RESET_FACE   // Double Press
+        },
+        {
+            // Button 1
+            M_FACE_MODE(FACE_EDIT_MOOD), // Press
+            M_NONE,                      // Long Press
+            M_NONE                       // Double Press
+        },
+        {
+            // Button 2
+            M_FACE_MODE(FACE_EDIT_SPACE), // Press
+            M_NONE,                       // Long Press
+            M_NONE                        // Double Press
+        },
+        {
+            // Button 3
+            M_FACE_MODE(FACE_EDIT_RADIUS), // Press
+            M_NONE,                        // Long Press
+            M_NONE                         // Double Press
+        },
+        {
+            // Button 4
+            M_FACE_MODE(FACE_EDIT_HEIGHT), // Press
+            M_FACE_MODE(FACE_EDIT_WIDTH),  // Long Press
+            M_NONE                         // Double Press
+        }}};
 
 // --- Layer colors ---
 void updateLayerColors()
@@ -331,7 +470,7 @@ void cycleLayer()
   interaction();
 }
 
-// --- HID Helpers ---
+// --- HID & Execution engine ---
 void sendKey(uint16_t key)
 {
   if (bk.isConnected())
@@ -365,400 +504,141 @@ void sendCombo(uint16_t modifier, char key)
   bk.release((uint8_t)key);
 }
 
-// --- Input actions ---
+void executeMacro(Layer l, uint8_t btnIdx, uint8_t evtIdx)
+{
+  Macro m = keyMap[l][btnIdx][evtIdx];
+  interaction();
+
+  switch (m.type)
+  {
+  case ACT_KEY:
+    sendKey(m.key);
+    break;
+
+  case ACT_MEDIA:
+    sendMediaKey(m.media);
+    break;
+
+  case ACT_COMBO:
+    sendCombo(MODIFIER_KEY, m.comboChar);
+    break;
+
+  case ACT_SET_MOOD:
+    faceMoodIdx = m.param;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break;
+
+  case ACT_FACE_MODE:
+    editMode = (FaceeditMode)m.param;
+    if (isDebugMode)
+    {
+      Serial.print("Face Edit Mode: ");
+      Serial.println(editMode);
+    }
+    flashMood(faceMoods[editMode % 4], 300);
+    break;
+
+  case ACT_CYCLE_LAYER:
+    cycleLayer();
+    return;
+
+  case ACT_RESET_FACE:
+    currentSpace = 24;
+    currentRadius = 12;
+    currentHeight = 64;
+    currentWidth = 64;
+    faceMoodIdx = 0;
+    eyes.setSpacebetween(currentSpace);
+    eyes.setBorderradius(currentRadius, currentRadius);
+    eyes.setWidth(currentWidth, currentWidth);
+    eyes.setHeight(currentHeight, currentHeight);
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    flashMood(HAPPY, 500);
+    break;
+
+  case ACT_NONE:
+  default:
+    break;
+  }
+
+  if (m.mood != 255 && m.type != ACT_NONE)
+    flashMood(m.mood, m.moodMs);
+}
+
+void logButtonPress(uint8_t btnIdx, uint8_t evtIdx)
+{
+  if (!isDebugMode)
+    return;
+  const char *btnNames[] = {"EncBtn", "Btn1", "Btn2", "Btn3", "Btn4"};
+  const char *evtNames[] = {"Short", "Long", "Double"};
+  char buf[32];
+  sprintf(buf, "%s: %s", btnNames[btnIdx], evtNames[evtIdx]);
+  logEvent(buf);
+}
+
+// --- Encoder logic ---
 void handleEncoder(int delta)
 {
   interaction();
-
   bool cw = (delta > 0);
-
   logEvent(cw ? "Encoder: CW" : "Encoder: CCW");
-
   int steps = abs(delta);
   if (steps > 3)
     steps = 3;
 
-  switch (layer)
+  if (layer == LAYER_MEDIA)
   {
-  case LAYER_MEDIA:
     for (int i = 0; i < steps; i++)
-    {
       sendKey(cw ? KEY_MEDIA_VOLUME_UP : KEY_MEDIA_VOLUME_DOWN);
-    }
-
     look(cw ? E : W, 500);
-    break;
-
-  case LAYER_KEYS:
-    for (int i = 0; i < steps; i++)
-    {
-      sendKey(cw ? KEY_UP_ARROW : KEY_DOWN_ARROW);
-    }
-
-    look(cw ? E : W, 500);
-    break;
-
-  case LAYER_FACE:
+  }
+  else if (layer == LAYER_KEYS)
   {
-    int n = sizeof(faceMoods) / sizeof(faceMoods[0]);
-    int idx = (int)faceMoodIdx + (cw ? steps : -steps);
-
-    idx %= n;
-    if (idx < 0)
-      idx += n;
-
-    faceMoodIdx = (uint8_t)idx;
-
-    tempMoodActive = false;
-    eyes.setMood(faceMoods[faceMoodIdx]);
+    for (int i = 0; i < steps; i++)
+      sendKey(cw ? KEY_UP_ARROW : KEY_DOWN_ARROW);
+    look(cw ? E : W, 500);
+  }
+  else if (layer == LAYER_FACE)
+  {
+    int dir = cw ? 1 : -1;
+    switch (editMode)
+    {
+    case FACE_EDIT_MOOD:
+    {
+      int n = sizeof(faceMoods) / sizeof(faceMoods[0]);
+      int idx = (int)faceMoodIdx + (dir * steps);
+      idx %= n;
+      if (idx < 0)
+        idx += n;
+      faceMoodIdx = (uint8_t)idx;
+      tempMoodActive = false;
+      eyes.setMood(faceMoods[faceMoodIdx]);
+      break;
+    }
+    case FACE_EDIT_SPACE:
+      currentSpace = constrain(currentSpace + (dir * steps * 2), 0, 100);
+      eyes.setSpacebetween(currentSpace);
+      break;
+    case FACE_EDIT_RADIUS:
+      currentRadius = constrain(currentRadius + (dir * steps), 0, 32);
+      eyes.setBorderradius(currentRadius, currentRadius);
+      break;
+    case FACE_EDIT_HEIGHT:
+      currentHeight = constrain(currentHeight + (dir * steps * 2), 10, 100);
+      eyes.setHeight(currentHeight, currentHeight);
+      break;
+    case FACE_EDIT_WIDTH:
+      currentWidth = constrain(currentWidth + (dir * steps * 2), 10, 100);
+      eyes.setWidth(currentWidth, currentWidth);
+      break;
+    }
     eyes.setPosition(DEFAULT);
     eyes.setCuriosity(false);
     lookUntil = 0;
-    break;
-  }
   }
 }
 
-void handleEncoderBtnPressed()
-{
-  interaction();
-  logEvent("EncBtn: Short");
-}
-
-void handleEncoderBtnLong()
-{
-  cycleLayer();
-  logEvent("EncBtn: Long");
-}
-
-void handleEncoderBtnDouble()
-{
-  interaction();
-  logEvent("EncBtn: Double");
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PLAY_PAUSE);
-    flashMood(HAPPY, 200);
-    break;
-  case LAYER_KEYS:
-    sendKey(' ');
-    flashMood(HAPPY, 200);
-    break; // Spacebar
-  case LAYER_FACE:
-    eyes.anim_laugh();
-    flashMood(HAPPY, 500);
-    break;
-  }
-}
-
-void handleEncoderBtnReleased()
-{
-  interaction();
-  logEvent("EncBtn: Deleased");
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_MUTE);
-    flashMood(HAPPY, 500);
-    break;
-  case LAYER_KEYS:
-    sendKey(KEY_RETURN);
-    flashMood(HAPPY, 500);
-    break;
-
-  case LAYER_FACE:
-    triggerWinkRight();
-    break;
-
-  default:
-    break;
-  }
-}
-
-void handleBtn1Pressed()
-{
-  interaction();
-  logEvent("Btn1: Short");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PLAY_PAUSE);
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'c');
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_FACE:
-    eyes.anim_laugh();
-    flashMood(TIRED, 500);
-    break;
-
-  default:
-    break;
-  }
-}
-
-void handleBtn1Long()
-{
-  interaction();
-  logEvent("Btn1: Long");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_STOP);
-    flashMood(ANGRY, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'x');
-    flashMood(ANGRY, 250);
-    break; // Cut
-  case LAYER_FACE:
-    faceMoodIdx = 3;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break; // Angry
-  }
-}
-void handleBtn1Double()
-{
-  interaction();
-  logEvent("Btn1: Double");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_NEXT_TRACK);
-    flashMood(HAPPY, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'v');
-    flashMood(HAPPY, 250);
-    break; // Paste
-  case LAYER_FACE:
-    faceMoodIdx = 1;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break; // Happy
-  }
-}
-
-void handleBtn2Pressed()
-{
-  interaction();
-  logEvent("Btn2: Short");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_NEXT_TRACK);
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'v');
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_FACE:
-    eyes.anim_confused();
-    flashMood(HAPPY, 500);
-    break;
-
-  default:
-    break;
-  }
-}
-
-void handleBtn2Long()
-{
-  interaction();
-  logEvent("Btn2: Long");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
-    flashMood(TIRED, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'z');
-    flashMood(TIRED, 250);
-    break; // Undo
-  case LAYER_FACE:
-    faceMoodIdx = 2;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break; // Tired
-  }
-}
-
-void handleBtn2Double()
-{
-  interaction();
-  logEvent("Btn2: Double");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_STOP);
-    flashMood(DEFAULT, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'y');
-    flashMood(DEFAULT, 250);
-    break; // Redo
-  case LAYER_FACE:
-    faceMoodIdx = 0;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break; // Default
-  }
-}
-
-void handleBtn3Pressed()
-{
-  interaction();
-  logEvent("Btn3: Short");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'z');
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_FACE:
-    eyes.anim_laugh();
-    flashMood(HAPPY, 500);
-    break;
-
-  default:
-    break;
-  }
-}
-
-void handleBtn3Long()
-{
-  interaction();
-  logEvent("Btn3: Long");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PLAY_PAUSE);
-    flashMood(TIRED, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'c');
-    flashMood(TIRED, 250);
-    break;
-  case LAYER_FACE:
-    faceMoodIdx = 2;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break;
-  }
-}
-
-void handleBtn3Double()
-{
-  interaction();
-  logEvent("Btn3: Double");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_MUTE);
-    flashMood(HAPPY, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'x');
-    flashMood(HAPPY, 250);
-    break;
-  case LAYER_FACE:
-    faceMoodIdx = 1;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break;
-  }
-}
-
-void handleBtn4Pressed()
-{
-  interaction();
-  logEvent("Btn4: Short");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_STOP);
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'y');
-    flashMood(HAPPY, 250);
-    break;
-
-  case LAYER_FACE:
-    triggerBlink();
-    break;
-
-  default:
-    break;
-  }
-}
-
-void handleBtn4Long()
-{
-  interaction();
-  logEvent("Btn4: Long");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_NEXT_TRACK);
-    flashMood(ANGRY, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'v');
-    flashMood(ANGRY, 250);
-    break;
-  case LAYER_FACE:
-    faceMoodIdx = 3;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break;
-  }
-}
-
-void handleBtn4Double()
-{
-  interaction();
-  logEvent("Btn4: Double");
-
-  switch (layer)
-  {
-  case LAYER_MEDIA:
-    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
-    flashMood(DEFAULT, 250);
-    break;
-  case LAYER_KEYS:
-    sendCombo(MODIFIER_KEY, 'z');
-    flashMood(DEFAULT, 250);
-    break;
-  case LAYER_FACE:
-    faceMoodIdx = 0;
-    eyes.setMood(faceMoods[faceMoodIdx]);
-    break;
-  }
-}
-
-// --- BLE connection state ---
+// --- System Monitors ---
 void handleConnection()
 {
   bool connected = bk.isConnected();
@@ -779,7 +659,6 @@ void handleConnection()
   lastConnected = connected;
 }
 
-// --- Battery monitor ---
 void checkBattery()
 {
   if (millis() - lastBatCheck < 2000)
@@ -837,10 +716,7 @@ void handleFaceTimers()
   if (tempMoodActive && millis() >= tempMoodUntil)
   {
     tempMoodActive = false;
-    if (isLowBattery)
-      eyes.setMood(TIRED);
-    else
-      eyes.setMood(restoreMood);
+    eyes.setMood(isLowBattery ? TIRED : restoreMood);
   }
 }
 
@@ -863,9 +739,6 @@ void setup()
   }
 
   analogReadResolution(12);
-
-  initBacklight();
-  setBacklight(200);
 
   pinMode(ENC_A_PIN, INPUT_PULLUP);
   pinMode(ENC_B_PIN, INPUT_PULLUP);
@@ -893,10 +766,11 @@ void setup()
   eyes.setAutoblinker(true, 2, 1);
   eyes.setIdleMode(true, 4, 0);
 
-  eyes.setWidth(64, 64);
-  eyes.setHeight(64, 64);
-  eyes.setBorderradius(12, 12);
-  eyes.setSpacebetween(24);
+  // Apply initial custom face geometry
+  eyes.setWidth(currentWidth, currentWidth);
+  eyes.setHeight(currentHeight, currentHeight);
+  eyes.setBorderradius(currentRadius, currentRadius);
+  eyes.setSpacebetween(currentSpace);
 
   eyes.setPosition(DEFAULT);
   eyes.setCuriosity(false);
@@ -921,39 +795,84 @@ void loop()
   btnFour.update(now);
 
   if (btnEncoder.pressedEvent)
-    handleEncoderBtnPressed();
+  {
+    logButtonPress(0, 0);
+    executeMacro(layer, 0, 0);
+  }
   if (btnEncoder.longEvent)
-    handleEncoderBtnLong();
+  {
+    logButtonPress(0, 1);
+    executeMacro(layer, 0, 1);
+  }
   if (btnEncoder.doubleEvent)
-    handleEncoderBtnDouble();
+  {
+    logButtonPress(0, 2);
+    executeMacro(layer, 0, 2);
+  }
 
   if (btnOne.pressedEvent)
-    handleBtn1Pressed();
+  {
+    logButtonPress(1, 0);
+    executeMacro(layer, 1, 0);
+  }
   if (btnOne.longEvent)
-    handleBtn1Long();
+  {
+    logButtonPress(1, 1);
+    executeMacro(layer, 1, 1);
+  }
   if (btnOne.doubleEvent)
-    handleBtn1Double();
+  {
+    logButtonPress(1, 2);
+    executeMacro(layer, 1, 2);
+  }
 
   if (btnTwo.pressedEvent)
-    handleBtn2Pressed();
+  {
+    logButtonPress(2, 0);
+    executeMacro(layer, 2, 0);
+  }
   if (btnTwo.longEvent)
-    handleBtn2Long();
+  {
+    logButtonPress(2, 1);
+    executeMacro(layer, 2, 1);
+  }
   if (btnTwo.doubleEvent)
-    handleBtn2Double();
+  {
+    logButtonPress(2, 2);
+    executeMacro(layer, 2, 2);
+  }
 
   if (btnThree.pressedEvent)
-    handleBtn3Pressed();
+  {
+    logButtonPress(3, 0);
+    executeMacro(layer, 3, 0);
+  }
   if (btnThree.longEvent)
-    handleBtn3Long();
+  {
+    logButtonPress(3, 1);
+    executeMacro(layer, 3, 1);
+  }
   if (btnThree.doubleEvent)
-    handleBtn3Double();
+  {
+    logButtonPress(3, 2);
+    executeMacro(layer, 3, 2);
+  }
 
   if (btnFour.pressedEvent)
-    handleBtn4Pressed();
+  {
+    logButtonPress(4, 0);
+    executeMacro(layer, 4, 0);
+  }
   if (btnFour.longEvent)
-    handleBtn4Long();
+  {
+    logButtonPress(4, 1);
+    executeMacro(layer, 4, 1);
+  }
   if (btnFour.doubleEvent)
-    handleBtn4Double();
+  {
+    logButtonPress(4, 2);
+    executeMacro(layer, 4, 2);
+  }
 
   noInterrupts();
   int rawTicks = encoderRawTicks;
