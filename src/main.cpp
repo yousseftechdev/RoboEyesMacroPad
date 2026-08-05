@@ -5,15 +5,16 @@
 #include "RoboEyesTFT_eSPI.h"
 
 // --- Settings ---
-// Backlight pin
 #define TFT_BL_PIN 4
+#define BAT_PIN 34
+#define DEBUG_BTN_PIN 35
 
 // Inputs
 #define ENC_A_PIN 25
 #define ENC_B_PIN 26
 #define ENC_SW_PIN 32
-#define BTN1_PIN 33
-#define BTN2_PIN 27
+#define BTN1_PIN 27
+#define BTN2_PIN 33
 #define BTN3_PIN 12
 #define BTN4_PIN 13
 
@@ -39,6 +40,22 @@ BleKeyboard bk("RoboEyes Macropad", "YoussefTech", 100);
 // --- Rotary encoder ---
 volatile int encoderRawTicks = 0;
 volatile uint8_t encoderPrevState = 0;
+
+// --- Globals ---
+bool isDebugMode = false;
+bool isLowBattery = false;
+unsigned long lastBatCheck = 0;
+
+void logEvent(const char *msg)
+{
+  if (isDebugMode)
+  {
+    Serial.print("[");
+    Serial.print(millis());
+    Serial.print("] ");
+    Serial.println(msg);
+  }
+}
 
 // Quadrature state machine table (Gray Code transitions)
 // 0 = no change, 1 = Clockwise, -1 = Counter-Clockwise
@@ -79,7 +96,7 @@ struct Button
   unsigned long lastChange = 0;
   unsigned long pressStart = 0;
   unsigned long releaseTime = 0;
-  unsigned long waitingForDouble = false;
+  bool waitingForDouble = false;
 
   void begin(uint8_t p)
   {
@@ -131,7 +148,6 @@ struct Button
 
         isDown = false;
         longFired = false;
-        suppressRelease = false;
       }
     }
 
@@ -150,11 +166,7 @@ struct Button
   }
 };
 
-Button btnEncoder;
-Button btnOne;
-Button btnTwo;
-Button btnThree;
-Button btnFour;
+Button btnEncoder, btnOne, btnTwo, btnThree, btnFour;
 
 // --- Layers ---
 enum Layer : uint8_t
@@ -200,6 +212,11 @@ void setBacklight(uint8_t brightness)
 // --- Layer colors ---
 void updateLayerColors()
 {
+  if (isLowBattery)
+  {
+    eyes.setColors(TFT_RED, TFT_BLACK);
+    return;
+  }
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -247,6 +264,9 @@ void look(uint8_t pos, uint16_t ms = 450)
 
 void flashMood(uint8_t mood, uint16_t ms = 450)
 {
+  if (isLowBattery)
+    return;
+
   restoreMood = faceMoods[faceMoodIdx];
 
   eyes.setMood(mood);
@@ -286,19 +306,27 @@ void triggerWinkLeft()
 
 void cycleLayer()
 {
+  if (isDebugMode)
+  {
+    Serial.print(millis());
+    Serial.print(" - Layer Changed to: ");
+    Serial.println(layer);
+  }
+
   layer = static_cast<Layer>((layer + 1) % LAYER_COUNT);
 
   uint8_t currentMood = faceMoods[faceMoodIdx];
   tempMoodActive = false;
   restoreMood = currentMood;
 
-  eyes.setMood(currentMood);
+  eyes.setMood(isLowBattery ? TIRED : currentMood);
   eyes.setPosition(DEFAULT);
   eyes.setCuriosity(false);
 
   updateLayerColors();
 
-  eyes.anim_laugh();
+  if (!isLowBattery)
+    eyes.anim_laugh();
 
   interaction();
 }
@@ -344,6 +372,8 @@ void handleEncoder(int delta)
 
   bool cw = (delta > 0);
 
+  logEvent(cw ? "Encoder: CW" : "Encoder: CCW");
+
   int steps = abs(delta);
   if (steps > 3)
     steps = 3;
@@ -365,7 +395,7 @@ void handleEncoder(int delta)
       sendKey(cw ? KEY_UP_ARROW : KEY_DOWN_ARROW);
     }
 
-    look(cw ? N : S, 500);
+    look(cw ? E : W, 500);
     break;
 
   case LAYER_FACE:
@@ -392,16 +422,19 @@ void handleEncoder(int delta)
 void handleEncoderBtnPressed()
 {
   interaction();
+  logEvent("EncBtn: Short");
 }
 
 void handleEncoderBtnLong()
 {
   cycleLayer();
+  logEvent("EncBtn: Long");
 }
 
 void handleEncoderBtnDouble()
 {
   interaction();
+  logEvent("EncBtn: Double");
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -422,7 +455,7 @@ void handleEncoderBtnDouble()
 void handleEncoderBtnReleased()
 {
   interaction();
-
+  logEvent("EncBtn: Deleased");
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -446,6 +479,7 @@ void handleEncoderBtnReleased()
 void handleBtn1Pressed()
 {
   interaction();
+  logEvent("Btn1: Short");
 
   switch (layer)
   {
@@ -472,6 +506,8 @@ void handleBtn1Pressed()
 void handleBtn1Long()
 {
   interaction();
+  logEvent("Btn1: Long");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -491,6 +527,8 @@ void handleBtn1Long()
 void handleBtn1Double()
 {
   interaction();
+  logEvent("Btn1: Double");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -511,6 +549,7 @@ void handleBtn1Double()
 void handleBtn2Pressed()
 {
   interaction();
+  logEvent("Btn2: Short");
 
   switch (layer)
   {
@@ -537,6 +576,8 @@ void handleBtn2Pressed()
 void handleBtn2Long()
 {
   interaction();
+  logEvent("Btn2: Long");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -557,6 +598,8 @@ void handleBtn2Long()
 void handleBtn2Double()
 {
   interaction();
+  logEvent("Btn2: Double");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -577,6 +620,7 @@ void handleBtn2Double()
 void handleBtn3Pressed()
 {
   interaction();
+  logEvent("Btn3: Short");
 
   switch (layer)
   {
@@ -603,6 +647,8 @@ void handleBtn3Pressed()
 void handleBtn3Long()
 {
   interaction();
+  logEvent("Btn3: Long");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -623,6 +669,8 @@ void handleBtn3Long()
 void handleBtn3Double()
 {
   interaction();
+  logEvent("Btn3: Double");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -643,6 +691,7 @@ void handleBtn3Double()
 void handleBtn4Pressed()
 {
   interaction();
+  logEvent("Btn4: Short");
 
   switch (layer)
   {
@@ -668,6 +717,8 @@ void handleBtn4Pressed()
 void handleBtn4Long()
 {
   interaction();
+  logEvent("Btn4: Long");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -688,6 +739,8 @@ void handleBtn4Long()
 void handleBtn4Double()
 {
   interaction();
+  logEvent("Btn4: Double");
+
   switch (layer)
   {
   case LAYER_MEDIA:
@@ -712,18 +765,57 @@ void handleConnection()
 
   if (connected && !lastConnected)
   {
+    logEvent("BLE: Connected");
     eyes.open();
     flashMood(HAPPY, 1500);
   }
 
   if (!connected && lastConnected)
   {
+    logEvent("BLE: Disconnected");
     eyes.setMood(TIRED);
   }
 
   lastConnected = connected;
 }
 
+// --- Battery monitor ---
+void checkBattery()
+{
+  if (millis() - lastBatCheck < 2000)
+    return;
+
+  lastBatCheck = millis();
+
+  int raw = 0;
+  for (int i = 0; i < 8; i++)
+    raw += analogRead(BAT_PIN);
+  raw /= 8;
+
+  // Estimate voltage. TTGO T-Display usually has a voltage divider.
+  // Adjust the multiplier (2.0) based on your specific board's divider.
+  float voltage = (raw / 4095.0) * 3.3 * 2.0;
+
+  // Low battery threshold: ~3.3V.
+  // > 2.5V prevents false triggers if no battery is connected and pin reads near 0.
+  bool low = (voltage < 3.3 && voltage > 2.5);
+
+  if (low && !isLowBattery)
+  {
+    isLowBattery = true;
+    eyes.setColors(TFT_RED, TFT_BLACK);
+    eyes.setMood(TIRED);
+    tempMoodActive = false;
+    logEvent("BATTERY LOW");
+  }
+  else if (!low && isLowBattery)
+  {
+    isLowBattery = false;
+    updateLayerColors();
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    logEvent("BATTERY OK");
+  }
+}
 // Face timers
 void handleFaceTimers()
 {
@@ -745,7 +837,10 @@ void handleFaceTimers()
   if (tempMoodActive && millis() >= tempMoodUntil)
   {
     tempMoodActive = false;
-    eyes.setMood(restoreMood);
+    if (isLowBattery)
+      eyes.setMood(TIRED);
+    else
+      eyes.setMood(restoreMood);
   }
 }
 
@@ -753,6 +848,19 @@ void handleFaceTimers()
 void setup()
 {
   Serial.begin(9600);
+
+  // IMPORTANT: GPIO 35 has NO internal pull-up resistor on the ESP32.
+  // You MUST use an external 10k pull-up to 3.3V, or change DEBUG_BTN_PIN to a pin that supports internal pull-ups (e.g. 0, 2, 4, 12-33).
+  pinMode(DEBUG_BTN_PIN, INPUT_PULLUP);
+  delay(50); // Allow pin to settle
+
+  if (digitalRead(DEBUG_BTN_PIN) == LOW)
+  {
+    isDebugMode = true;
+    Serial.println("\n=================================");
+    Serial.println("   DEBUG MODE ENABLED (Pin 35)");
+    Serial.println("=================================\n");
+  }
 
   analogReadResolution(12);
 
@@ -866,6 +974,7 @@ void loop()
     handleEncoder(delta);
   }
 
+  checkBattery();
   handleConnection();
   handleFaceTimers();
 
