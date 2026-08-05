@@ -68,6 +68,7 @@ struct Button
   bool pressedEvent = false;
   bool releasedEvent = false;
   bool longEvent = false;
+  bool doubleEvent = false;
 
   bool rawState = HIGH;
   bool stableState = HIGH;
@@ -77,6 +78,8 @@ struct Button
 
   unsigned long lastChange = 0;
   unsigned long pressStart = 0;
+  unsigned long releaseTime = 0;
+  unsigned long waitingForDouble = false;
 
   void begin(uint8_t p)
   {
@@ -87,11 +90,12 @@ struct Button
     lastChange = millis();
   }
 
-  void update(unsigned long now, unsigned long debounceMs = 25, unsigned long holdMs = 800)
+  void update(unsigned long now, unsigned long debounceMs = 25, unsigned long holdMs = 800, unsigned long doubleMs = 300)
   {
     pressedEvent = false;
     releasedEvent = false;
     longEvent = false;
+    doubleEvent = false;
 
     bool reading = digitalRead(pin);
 
@@ -105,19 +109,24 @@ struct Button
     {
       stableState = rawState;
 
-      if (stableState == LOW)
+      if (stableState == LOW) // Pressed
       {
         isDown = true;
         pressStart = now;
         longFired = false;
-        suppressRelease = false;
-        pressedEvent = true;
-      }
-      else
-      {
-        if (isDown && !suppressRelease)
+        if (waitingForDouble)
         {
-          releasedEvent = true;
+          doubleEvent = true;
+          waitingForDouble = false;
+        }
+      }
+      else // Released
+      {
+        releasedEvent = true;
+        if (isDown && !longFired)
+        {
+          waitingForDouble = true;
+          releaseTime = now;
         }
 
         isDown = false;
@@ -130,7 +139,13 @@ struct Button
     {
       longFired = true;
       longEvent = true;
-      suppressRelease = true;
+      waitingForDouble = false;
+    }
+
+    if (waitingForDouble && (now - releaseTime >= doubleMs))
+    {
+      pressedEvent = true;
+      waitingForDouble = false;
     }
   }
 };
@@ -232,7 +247,7 @@ void look(uint8_t pos, uint16_t ms = 450)
 
 void flashMood(uint8_t mood, uint16_t ms = 450)
 {
-  restoreMood = (layer == LAYER_FACE) ? faceMoods[faceMoodIdx] : DEFAULT;
+  restoreMood = faceMoods[faceMoodIdx];
 
   eyes.setMood(mood);
   tempMoodActive = true;
@@ -249,15 +264,35 @@ void triggerBlink()
   manualBlinkOpenAt = millis() + 130;
 }
 
+void triggerWinkRight()
+{
+  if (manualBlinkActive)
+    return;
+
+  eyes.close(true, false);
+  manualBlinkActive = true;
+  manualBlinkOpenAt = millis() + 130;
+}
+
+void triggerWinkLeft()
+{
+  if (manualBlinkActive)
+    return;
+
+  eyes.close(false, true);
+  manualBlinkActive = true;
+  manualBlinkOpenAt = millis() + 130;
+}
+
 void cycleLayer()
 {
   layer = static_cast<Layer>((layer + 1) % LAYER_COUNT);
 
-  faceMoodIdx = 0;
+  uint8_t currentMood = faceMoods[faceMoodIdx];
   tempMoodActive = false;
-  restoreMood = DEFAULT;
+  restoreMood = currentMood;
 
-  eyes.setMood(DEFAULT);
+  eyes.setMood(currentMood);
   eyes.setPosition(DEFAULT);
   eyes.setCuriosity(false);
 
@@ -364,6 +399,26 @@ void handleEncoderBtnLong()
   cycleLayer();
 }
 
+void handleEncoderBtnDouble()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_PLAY_PAUSE);
+    flashMood(HAPPY, 200);
+    break;
+  case LAYER_KEYS:
+    sendKey(' ');
+    flashMood(HAPPY, 200);
+    break; // Spacebar
+  case LAYER_FACE:
+    eyes.anim_laugh();
+    flashMood(HAPPY, 500);
+    break;
+  }
+}
+
 void handleEncoderBtnReleased()
 {
   interaction();
@@ -372,15 +427,15 @@ void handleEncoderBtnReleased()
   {
   case LAYER_MEDIA:
     sendKey(KEY_MEDIA_MUTE);
-    flashMood(HAPPY, 200);
+    flashMood(HAPPY, 500);
     break;
   case LAYER_KEYS:
     sendKey(KEY_RETURN);
-    flashMood(HAPPY, 200);
+    flashMood(HAPPY, 500);
     break;
 
   case LAYER_FACE:
-    triggerBlink();
+    triggerWinkRight();
     break;
 
   default:
@@ -406,11 +461,50 @@ void handleBtn1Pressed()
 
   case LAYER_FACE:
     eyes.anim_laugh();
-    flashMood(HAPPY, 500);
+    flashMood(TIRED, 500);
     break;
 
   default:
     break;
+  }
+}
+
+void handleBtn1Long()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_STOP);
+    flashMood(ANGRY, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'x');
+    flashMood(ANGRY, 250);
+    break; // Cut
+  case LAYER_FACE:
+    faceMoodIdx = 3;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break; // Angry
+  }
+}
+void handleBtn1Double()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_NEXT_TRACK);
+    flashMood(HAPPY, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'v');
+    flashMood(HAPPY, 250);
+    break; // Paste
+  case LAYER_FACE:
+    faceMoodIdx = 1;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break; // Happy
   }
 }
 
@@ -440,6 +534,46 @@ void handleBtn2Pressed()
   }
 }
 
+void handleBtn2Long()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
+    flashMood(TIRED, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'z');
+    flashMood(TIRED, 250);
+    break; // Undo
+  case LAYER_FACE:
+    faceMoodIdx = 2;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break; // Tired
+  }
+}
+
+void handleBtn2Double()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_STOP);
+    flashMood(DEFAULT, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'y');
+    flashMood(DEFAULT, 250);
+    break; // Redo
+  case LAYER_FACE:
+    faceMoodIdx = 0;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break; // Default
+  }
+}
+
 void handleBtn3Pressed()
 {
   interaction();
@@ -466,6 +600,46 @@ void handleBtn3Pressed()
   }
 }
 
+void handleBtn3Long()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_PLAY_PAUSE);
+    flashMood(TIRED, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'c');
+    flashMood(TIRED, 250);
+    break;
+  case LAYER_FACE:
+    faceMoodIdx = 2;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break;
+  }
+}
+
+void handleBtn3Double()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_MUTE);
+    flashMood(HAPPY, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'x');
+    flashMood(HAPPY, 250);
+    break;
+  case LAYER_FACE:
+    faceMoodIdx = 1;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break;
+  }
+}
+
 void handleBtn4Pressed()
 {
   interaction();
@@ -487,6 +661,46 @@ void handleBtn4Pressed()
     break;
 
   default:
+    break;
+  }
+}
+
+void handleBtn4Long()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_NEXT_TRACK);
+    flashMood(ANGRY, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'v');
+    flashMood(ANGRY, 250);
+    break;
+  case LAYER_FACE:
+    faceMoodIdx = 3;
+    eyes.setMood(faceMoods[faceMoodIdx]);
+    break;
+  }
+}
+
+void handleBtn4Double()
+{
+  interaction();
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
+    flashMood(DEFAULT, 250);
+    break;
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'z');
+    flashMood(DEFAULT, 250);
+    break;
+  case LAYER_FACE:
+    faceMoodIdx = 0;
+    eyes.setMood(faceMoods[faceMoodIdx]);
     break;
   }
 }
@@ -595,22 +809,43 @@ void loop()
   btnEncoder.update(now);
   btnOne.update(now);
   btnTwo.update(now);
+  btnThree.update(now);
+  btnFour.update(now);
 
   if (btnEncoder.pressedEvent)
     handleEncoderBtnPressed();
   if (btnEncoder.longEvent)
     handleEncoderBtnLong();
-  if (btnEncoder.releasedEvent)
-    handleEncoderBtnReleased();
+  if (btnEncoder.doubleEvent)
+    handleEncoderBtnDouble();
 
   if (btnOne.pressedEvent)
     handleBtn1Pressed();
+  if (btnOne.longEvent)
+    handleBtn1Long();
+  if (btnOne.doubleEvent)
+    handleBtn1Double();
+
   if (btnTwo.pressedEvent)
     handleBtn2Pressed();
+  if (btnTwo.longEvent)
+    handleBtn2Long();
+  if (btnTwo.doubleEvent)
+    handleBtn2Double();
+
   if (btnThree.pressedEvent)
     handleBtn3Pressed();
+  if (btnThree.longEvent)
+    handleBtn3Long();
+  if (btnThree.doubleEvent)
+    handleBtn3Double();
+
   if (btnFour.pressedEvent)
     handleBtn4Pressed();
+  if (btnFour.longEvent)
+    handleBtn4Long();
+  if (btnFour.doubleEvent)
+    handleBtn4Double();
 
   noInterrupts();
   int rawTicks = encoderRawTicks;
