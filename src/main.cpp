@@ -14,7 +14,8 @@
 #define ENC_SW_PIN 32
 #define BTN1_PIN 33
 #define BTN2_PIN 27
-#define POT_PIN 36
+#define BTN3_PIN 12
+#define BTN4_PIN 13
 
 // Encoder direction & resolution config
 #define ENCODER_REVERSED false
@@ -137,6 +138,8 @@ struct Button
 Button btnEncoder;
 Button btnOne;
 Button btnTwo;
+Button btnThree;
+Button btnFour;
 
 // --- Layers ---
 enum Layer : uint8_t
@@ -165,32 +168,9 @@ bool tempMoodActive = false;
 unsigned long tempMoodUntil = 0;
 uint8_t restoreMood = DEFAULT;
 
-int lastBackLight = -1;
-int lastPotMood = -1;
-float potSmooth = 0.0f;
-
 bool lastConnected = false;
 
 // --- Backlight ---
-// void initBacklight()
-// {
-// #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-//   ledcAttach(TFT_BL_PIN, 5000, 8);
-// #else
-//   ledcSetup(0, 5000, 8);
-//   ledcAttachPin(TFT_BL_PIN, 0);
-// #endif
-// }
-
-// void setBacklight(uint8_t brightness)
-// {
-// #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
-//   ledcWrite(TFT_BL_PIN, brightness);
-// #else
-//   ledcWrite(0, brightness);
-// #endif
-// }
-
 void initBacklight()
 {
   ledcSetup(1, 5000, 8);
@@ -200,6 +180,25 @@ void initBacklight()
 void setBacklight(uint8_t brightness)
 {
   ledcWrite(1, brightness);
+}
+
+// --- Layer colors ---
+void updateLayerColors()
+{
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    eyes.setColors(TFT_CYAN, TFT_BLACK);
+    break;
+
+  case LAYER_KEYS:
+    eyes.setColors(TFT_GREEN, TFT_BLACK);
+    break;
+
+  case LAYER_FACE:
+    eyes.setColors(TFT_YELLOW, TFT_BLACK);
+    break;
+  }
 }
 
 // --- Face interaction helpers ---
@@ -226,6 +225,7 @@ void maybeIdle()
 
 void look(uint8_t pos, uint16_t ms = 450)
 {
+  eyes.setCuriosity(true);
   eyes.setPosition(pos);
   lookUntil = ms ? (millis() + ms) : 0;
 }
@@ -256,12 +256,14 @@ void cycleLayer()
   faceMoodIdx = 0;
   tempMoodActive = false;
   restoreMood = DEFAULT;
-  lastPotMood = -1;
 
   eyes.setMood(DEFAULT);
   eyes.setPosition(DEFAULT);
+  eyes.setCuriosity(false);
 
-  eyes.anim_confused();
+  updateLayerColors();
+
+  eyes.anim_laugh();
 
   interaction();
 }
@@ -332,6 +334,7 @@ void handleEncoder(int delta)
     break;
 
   case LAYER_FACE:
+  {
     int n = sizeof(faceMoods) / sizeof(faceMoods[0]);
     int idx = (int)faceMoodIdx + (cw ? steps : -steps);
 
@@ -344,8 +347,10 @@ void handleEncoder(int delta)
     tempMoodActive = false;
     eyes.setMood(faceMoods[faceMoodIdx]);
     eyes.setPosition(DEFAULT);
+    eyes.setCuriosity(false);
     lookUntil = 0;
     break;
+  }
   }
 }
 
@@ -435,57 +440,58 @@ void handleBtn2Pressed()
   }
 }
 
-// --- Potentiometer
-int readPotSmoothed()
+void handleBtn3Pressed()
 {
-  int raw = analogRead(POT_PIN);
-  raw = constrain(raw, 0, 4095);
+  interaction();
 
-  potSmooth = (potSmooth * 0.88f) + (raw * 0.12f);
-
-  return (int)potSmooth;
-}
-
-void handlePot()
-{
-  int val = readPotSmoothed();
-  // Serial.println(val);
-
-  // Handle Backlight
-  int brightness = map(val, 0, 4095, 20, 255);
-  if (abs(brightness - lastBackLight) > 2)
+  switch (layer)
   {
-    setBacklight((uint8_t)brightness);
-    lastBackLight = brightness;
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_PREVIOUS_TRACK);
+    flashMood(HAPPY, 250);
+    break;
+
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'z');
+    flashMood(HAPPY, 250);
+    break;
+
+  case LAYER_FACE:
+    eyes.anim_laugh();
+    flashMood(HAPPY, 500);
+    break;
+
+  default:
+    break;
   }
-
-  // // Do not override manual face selection or temporary animations
-  // if (layer == LAYER_FACE || tempMoodActive)
-  //   return;
-
-  // int newMood = lastPotMood; // Preserve previous state by default
-
-  // // Hysteresis deadbands to prevent locking/sticking:
-  // // Must drop below 1000 to trigger TIRED, must exceed 1400 to exit TIRED
-  // // Must rise above 3100 to trigger HAPPY, must drop below 2800 to exit HAPPY
-  // if (lastPotMood == TIRED) {
-  //   if (val > 1400) newMood = DEFAULT;
-  // } 
-  // else if (lastPotMood == HAPPY) {
-  //   if (val < 2800) newMood = DEFAULT;
-  // } 
-  // else { // Currently DEFAULT
-  //   if (val < 1000) newMood = TIRED;
-  //   else if (val > 3100) newMood = HAPPY;
-  // }
-
-  // if (newMood != lastPotMood)
-  // {
-  //   eyes.setMood(newMood);
-  //   lastPotMood = newMood;
-  // }
 }
-// BLE connection state
+
+void handleBtn4Pressed()
+{
+  interaction();
+
+  switch (layer)
+  {
+  case LAYER_MEDIA:
+    sendKey(KEY_MEDIA_STOP);
+    flashMood(HAPPY, 250);
+    break;
+
+  case LAYER_KEYS:
+    sendCombo(MODIFIER_KEY, 'y');
+    flashMood(HAPPY, 250);
+    break;
+
+  case LAYER_FACE:
+    triggerBlink();
+    break;
+
+  default:
+    break;
+  }
+}
+
+// --- BLE connection state ---
 void handleConnection()
 {
   bool connected = bk.isConnected();
@@ -499,7 +505,6 @@ void handleConnection()
   if (!connected && lastConnected)
   {
     eyes.setMood(TIRED);
-    lastPotMood = -1;
   }
 
   lastConnected = connected;
@@ -513,6 +518,7 @@ void handleFaceTimers()
   if (lookUntil != 0 && millis() >= lookUntil)
   {
     eyes.setPosition(DEFAULT);
+    eyes.setCuriosity(false);
     lookUntil = 0;
   }
 
@@ -526,7 +532,6 @@ void handleFaceTimers()
   {
     tempMoodActive = false;
     eyes.setMood(restoreMood);
-    lastPotMood = -1;
   }
 }
 
@@ -538,7 +543,7 @@ void setup()
   analogReadResolution(12);
 
   initBacklight();
-  setBacklight(255);
+  setBacklight(200);
 
   pinMode(ENC_A_PIN, INPUT_PULLUP);
   pinMode(ENC_B_PIN, INPUT_PULLUP);
@@ -555,6 +560,8 @@ void setup()
   btnEncoder.begin(ENC_SW_PIN);
   btnOne.begin(BTN1_PIN);
   btnTwo.begin(BTN2_PIN);
+  btnThree.begin(BTN3_PIN);
+  btnFour.begin(BTN4_PIN);
 
   tft.init();
   eyes.begin(60);
@@ -570,28 +577,12 @@ void setup()
   eyes.setSpacebetween(24);
 
   eyes.setPosition(DEFAULT);
+  eyes.setCuriosity(false);
   eyes.open();
 
-  bk.begin();
+  updateLayerColors();
 
-  // Warm up the ADC with multiple reads to stabilize potSmooth
-  analogRead(POT_PIN); 
-  delay(10);
-  
-  float rawAccum = 0;
-  for(int i = 0; i < 10; i++) {
-    rawAccum += analogRead(POT_PIN);
-    delay(2);
-  }
-  potSmooth = rawAccum / 10.0f;
-  
-  // Set initial backlight without triggering an immediate stuck mood state
-  int initialVal = (int)potSmooth;
-  lastBackLight = map(initialVal, 0, 4095, 20, 255);
-  setBacklight((uint8_t)lastBackLight);
-  
-  // Start with default mood explicitly
-  lastPotMood = DEFAULT;
+  bk.begin();
 
   lastInteraction = millis();
 }
@@ -616,6 +607,10 @@ void loop()
     handleBtn1Pressed();
   if (btnTwo.pressedEvent)
     handleBtn2Pressed();
+  if (btnThree.pressedEvent)
+    handleBtn3Pressed();
+  if (btnFour.pressedEvent)
+    handleBtn4Pressed();
 
   noInterrupts();
   int rawTicks = encoderRawTicks;
@@ -636,7 +631,6 @@ void loop()
     handleEncoder(delta);
   }
 
-  handlePot();
   handleConnection();
   handleFaceTimers();
 
