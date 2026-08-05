@@ -91,6 +91,7 @@ struct Button
   bool stableState = HIGH;
   bool isDown = false;
   bool longFired = false;
+  bool doubleFired = false; // NEW: Tracks if the current sequence already resolved as a double press
 
   unsigned long lastChange = 0;
   unsigned long pressStart = 0;
@@ -106,7 +107,7 @@ struct Button
     lastChange = millis();
   }
 
-  void update(unsigned long now, unsigned long debounceMs = 25, unsigned long holdMs = 800, unsigned long doubleMs = 300)
+  void update(unsigned long now, unsigned long debounceMs = 25, unsigned long holdMs = 800, unsigned long doubleMs = 100)
   {
     pressedEvent = false;
     releasedEvent = false;
@@ -130,19 +131,27 @@ struct Button
         isDown = true;
         pressStart = now;
         longFired = false;
+        
         if (waitingForDouble)
         {
           doubleEvent = true;
           waitingForDouble = false;
+          doubleFired = true; // Mark that this sequence resulted in a double press
         }
       }
       else // Released
       {
         releasedEvent = true;
-        if (isDown && !longFired)
+        
+        // Only wait for a double press if we haven't already fired a long or double event
+        if (isDown && !longFired && !doubleFired)
         {
           waitingForDouble = true;
           releaseTime = now;
+        }
+        else
+        {
+          doubleFired = false; // Reset flag for the next sequence
         }
 
         isDown = false;
@@ -150,7 +159,8 @@ struct Button
       }
     }
 
-    if (isDown && !longFired && (now - pressStart >= holdMs))
+    // Prevent long press from firing if a double press already fired on this sequence
+    if (isDown && !longFired && !doubleFired && (now - pressStart >= holdMs))
     {
       longFired = true;
       longEvent = true;
@@ -170,13 +180,13 @@ Button btnEncoder, btnOne, btnTwo, btnThree, btnFour;
 // --- Layers ---
 enum Layer : uint8_t
 {
-  LAYER_MEDIA = 0,
-  LAYER_KEYS,
-  LAYER_FACE,
+  LAYER_ONE = 0,
+  LAYER_TWO,
+  LAYER_THREE,
   LAYER_COUNT
 };
 
-Layer layer = LAYER_MEDIA;
+Layer layer = LAYER_ONE;
 
 // --- Face customization modes ---
 enum FaceeditMode
@@ -251,7 +261,7 @@ struct Macro
 // The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
 // The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
 Macro keyMap[LAYER_COUNT][5][3] = {
-    // LAYER_MEDIA
+    // LAYER_ONE
     {
         {
             // Encoder Button
@@ -283,7 +293,7 @@ Macro keyMap[LAYER_COUNT][5][3] = {
             M_MEDIA(KEY_MEDIA_NEXT_TRACK, ANGRY, 250),      // Long Press
             M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, DEFAULT, 250) // Double Press
         }},
-    // LAYER_KEYS
+    // LAYER_TWO
     {
         {
             // Encoder Button
@@ -315,7 +325,7 @@ Macro keyMap[LAYER_COUNT][5][3] = {
             M_COMBO(MODIFIER_KEY, 'v', ANGRY, 250),  // Long Press
             M_COMBO(MODIFIER_KEY, 'z', DEFAULT, 250) // Double Press
         }},
-    // LAYER_FACE (Customization Engine)
+    // LAYER_THREE (Customization Engine)
     {
         {
             // Encoder Button
@@ -358,15 +368,15 @@ void updateLayerColors()
   }
   switch (layer)
   {
-  case LAYER_MEDIA:
+  case LAYER_ONE:
     eyes.setColors(TFT_CYAN, TFT_BLACK);
     break;
 
-  case LAYER_KEYS:
+  case LAYER_TWO:
     eyes.setColors(TFT_GREEN, TFT_BLACK);
     break;
 
-  case LAYER_FACE:
+  case LAYER_THREE:
     eyes.setColors(TFT_YELLOW, TFT_BLACK);
     break;
   }
@@ -586,19 +596,19 @@ void handleEncoder(int delta)
   if (steps > 3)
     steps = 3;
 
-  if (layer == LAYER_MEDIA)
+  if (layer == LAYER_ONE)
   {
     for (int i = 0; i < steps; i++)
       sendKey(cw ? KEY_MEDIA_VOLUME_UP : KEY_MEDIA_VOLUME_DOWN);
     look(cw ? E : W, 500);
   }
-  else if (layer == LAYER_KEYS)
+  else if (layer == LAYER_TWO)
   {
     for (int i = 0; i < steps; i++)
       sendKey(cw ? KEY_UP_ARROW : KEY_DOWN_ARROW);
     look(cw ? E : W, 500);
   }
-  else if (layer == LAYER_FACE)
+  else if (layer == LAYER_THREE)
   {
     int dir = cw ? 1 : -1;
     switch (editMode)
