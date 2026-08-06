@@ -810,10 +810,8 @@ void setup()
 {
   Serial.begin(9600);
 
-  // IMPORTANT: GPIO 35 has NO internal pull-up resistor on the ESP32.
-  // You MUST use an external 10k pull-up to 3.3V, or change DEBUG_BTN_PIN to a pin that supports internal pull-ups (e.g. 0, 2, 4, 12-33).
   pinMode(DEBUG_BTN_PIN, INPUT_PULLUP);
-  delay(50); // Allow pin to settle
+  delay(50);
 
   if (digitalRead(DEBUG_BTN_PIN) == LOW)
   {
