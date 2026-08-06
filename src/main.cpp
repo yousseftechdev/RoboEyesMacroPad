@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <BleKeyboard.h>
+#include <Preferences.h>
 #include "RoboEyesTFT_eSPI.h"
 
 // --- Settings ---
@@ -33,6 +34,7 @@
 // Screen and robot eyes
 TFT_eSPI tft = TFT_eSPI();
 TFT_RoboEyes eyes = TFT_RoboEyes(tft, LANDSCAPE);
+Preferences prefs;
 
 // Bluetooth HID keyboard
 BleKeyboard bk("RoboEyes Macropad", "YoussefTech", 100);
@@ -91,7 +93,7 @@ struct Button
   bool stableState = HIGH;
   bool isDown = false;
   bool longFired = false;
-  bool doubleFired = false; // NEW: Tracks if the current sequence already resolved as a double press
+  bool doubleFired = false;
 
   unsigned long lastChange = 0;
   unsigned long pressStart = 0;
@@ -131,7 +133,7 @@ struct Button
         isDown = true;
         pressStart = now;
         longFired = false;
-        
+
         if (waitingForDouble)
         {
           doubleEvent = true;
@@ -142,7 +144,7 @@ struct Button
       else // Released
       {
         releasedEvent = true;
-        
+
         // Only wait for a double press if we haven't already fired a long or double event
         if (isDown && !longFired && !doubleFired)
         {
@@ -188,7 +190,7 @@ enum Layer : uint8_t
 
 Layer layer = LAYER_ONE;
 
-// --- Face customization modes ---
+// --- Face customization ---
 enum FaceeditMode
 {
   FACE_EDIT_MOOD = 0,
@@ -200,10 +202,10 @@ enum FaceeditMode
 };
 FaceeditMode editMode = FACE_EDIT_MOOD;
 
-int currentSpace = 24;
-int currentRadius = 12;
-int currentHeight = 64;
-int currentWidth = 64;
+int currentSpace;
+int currentRadius;
+int currentHeight;
+int currentWidth;
 
 // --- Face states ---
 uint8_t faceMoods[] = {DEFAULT, HAPPY, TIRED, ANGRY};
@@ -222,6 +224,45 @@ unsigned long tempMoodUntil = 0;
 uint8_t restoreMood = DEFAULT;
 
 bool lastConnected = false;
+
+void applyFaceSettings()
+{
+  eyes.setSpacebetween(currentSpace);
+  eyes.setBorderradius(currentRadius, currentRadius);
+  eyes.setWidth(currentWidth, currentWidth);
+  eyes.setHeight(currentHeight, currentHeight);
+  eyes.setMood(faceMoods[faceMoodIdx]);
+}
+
+void loadFaceSettings()
+{
+  prefs.begin("robo_face", true);
+
+  currentSpace = prefs.getInt("space", 24);
+  currentRadius = prefs.getInt("radius", 12);
+  currentHeight = prefs.getInt("height", 64);
+  currentWidth = prefs.getInt("width", 64);
+  faceMoodIdx = prefs.getUChar("mood", 0);
+
+  prefs.end();
+
+  logEvent("Loaded face settings from NVS");
+}
+
+void saveFaceSettings()
+{
+  prefs.begin("robo_face", false);
+
+  prefs.putInt("space", currentSpace);
+  prefs.putInt("radius", currentRadius);
+  prefs.putInt("height", currentHeight);
+  prefs.putInt("width", currentWidth);
+  prefs.putUChar("mood", faceMoodIdx);
+
+  prefs.end();
+
+  logEvent("Saved face settings to NVS");
+}
 
 // --- Macro engine ---
 enum ActionType
@@ -250,112 +291,136 @@ struct Macro
 
 // Helper macros to make the grid readable
 #define M_NONE {ACT_NONE, 0, nullptr, 0, 0, 255, 0, 0}
+
 #define M_KEY(k, m, ms) {ACT_KEY, k, nullptr, 0, 0, m, ms, 0}
+
 #define M_MEDIA(mk, m, ms) {ACT_MEDIA, 0, mk, 0, 0, m, ms, 0}
-#define M_COMBO(mod, c, m, ms) {ACT_COMBO, 0, nullptr, mod, c, m, ms, 0}
+
+// Combo for standard shortcuts (Ctrl/Cmd)
+#define M_COMBO(c, mood, ms) {ACT_COMBO, 0, nullptr, MODIFIER_KEY, c, mood, ms, 0}
+
+// Combo for special shortcuts (Win/Super)
+#define M_COMBO_SUPER(c, mood, ms) {ACT_COMBO, 0, nullptr, KEY_LEFT_GUI, c, mood, ms, 0}
+
+// Multi-modifier combo helper (e.g. Ctrl + Shift + Key)
+#define M_COMBO_SHIFT(c, mood, ms) {ACT_COMBO, 0, nullptr, (MODIFIER_KEY | KEY_LEFT_SHIFT), c, mood, ms, 0}
+
 #define M_SET_MOOD(idx) {ACT_SET_MOOD, 0, nullptr, 0, 0, 255, 0, idx}
+
 #define M_FACE_MODE(fm) {ACT_FACE_MODE, 0, nullptr, 0, 0, 255, 0, fm}
+
 #define M_CYCLE_LAYER {ACT_CYCLE_LAYER, 0, nullptr, 0, 0, 255, 0, 0}
+
 #define M_RESET_FACE {ACT_RESET_FACE, 0, nullptr, 0, 0, 255, 0, 0}
 
 // The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
-// The Keymap Grid: [Layer] [Button: 0=Enc, 1-4=Btns] [Event: 0=Short, 1=Long, 2=Double]
 Macro keyMap[LAYER_COUNT][5][3] = {
-    // LAYER_ONE
+    // -------------------------------------------------------------------------
+    // LAYER ONE: Media & System Navigation
+    // Encoder Dial: Volume Up / Volume Down
+    // -------------------------------------------------------------------------
     {
         {
             // Encoder Button
-            M_MEDIA(KEY_MEDIA_MUTE, HAPPY, 500),      // Press
-            M_CYCLE_LAYER,                            // Long Press
-            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 200) // Double Press
+            M_MEDIA(KEY_MEDIA_MUTE, TIRED, 300),      // Short: Mute/Unmute Audio
+            M_CYCLE_LAYER,                            // Long:  Cycle to Layer 2
+            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 300) // Double: Play / Pause
         },
         {
-            // Button 1
-            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 250), // Press
-            M_MEDIA(KEY_MEDIA_STOP, ANGRY, 250),       // Long Press
-            M_MEDIA(KEY_MEDIA_NEXT_TRACK, HAPPY, 250)  // Double Press
+            // Button 1: Track Previous
+            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, DEFAULT, 200),              // Short: Previous Track
+            M_MEDIA(KEY_MEDIA_WWW_BACK, DEFAULT, 200),                    // Long:  Browser Back
+            M_MEDIA(KEY_MEDIA_CONSUMER_CONTROL_CONFIGURATION, HAPPY, 300) // Double: Reserved / Custom Media
         },
         {
-            // Button 2
-            M_MEDIA(KEY_MEDIA_NEXT_TRACK, HAPPY, 250),     // Press
-            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, TIRED, 250), // Long Press
-            M_MEDIA(KEY_MEDIA_STOP, DEFAULT, 250)          // Double Press
+            // Button 2: Play/Pause
+            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, HAPPY, 300), // Short: Play / Pause
+            M_MEDIA(KEY_MEDIA_CALCULATOR, HAPPY, 400), // Long:  Launch Calculator App
+            M_MEDIA(KEY_MEDIA_STOP, ANGRY, 300)        // Double: Stop Playback
         },
         {
-            // Button 3
-            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, HAPPY, 250), // Press
-            M_MEDIA(KEY_MEDIA_PLAY_PAUSE, TIRED, 250),     // Long Press
-            M_MEDIA(KEY_MEDIA_MUTE, HAPPY, 250)            // Double Press
+            // Button 3: Track Next
+            M_MEDIA(KEY_MEDIA_NEXT_TRACK, DEFAULT, 200), // Short: Next Track
+            M_MEDIA(KEY_MEDIA_WWW_BACK, DEFAULT, 200),   // Long:  Browser Forward
+            M_KEY(KEY_PAGE_DOWN, HAPPY, 500)             // Double: PrintScreen / Screenshot
         },
         {
-            // Button 4
-            M_MEDIA(KEY_MEDIA_STOP, HAPPY, 250),            // Press
-            M_MEDIA(KEY_MEDIA_NEXT_TRACK, ANGRY, 250),      // Long Press
-            M_MEDIA(KEY_MEDIA_PREVIOUS_TRACK, DEFAULT, 250) // Double Press
+            // Button 4: System Workspaces / Task View
+            M_COMBO(KEY_TAB, HAPPY, 400),     // Short: Task View (Alt/Win+Tab)
+            M_KEY(KEY_CAPS_LOCK, TIRED, 300), // Long:  Toggle CapsLock
+            M_COMBO_SUPER('m', HAPPY, 400)    // Double: Win+M / Minimuize all windows
         }},
-    // LAYER_TWO
+
+    // -------------------------------------------------------------------------
+    // LAYER TWO: Universal Productivity & Editing
+    // Encoder Dial: Scroll Up / Scroll Down (Up/Down Arrows)
+    // -------------------------------------------------------------------------
     {
         {
             // Encoder Button
-            M_KEY(KEY_RETURN, HAPPY, 500), // Press
-            M_CYCLE_LAYER,                 // Long Press
-            M_KEY(' ', HAPPY, 200)         // Double Press
+            M_KEY(KEY_RETURN, DEFAULT, 200), // Short: Enter
+            M_CYCLE_LAYER,                   // Long:  Cycle to Layer 3
+            M_KEY(KEY_BACKSPACE, TIRED, 200) // Double: Backspace
         },
         {
-            // Button 1
-            M_COMBO(MODIFIER_KEY, 'c', HAPPY, 250), // Press
-            M_COMBO(MODIFIER_KEY, 'x', ANGRY, 250), // Long Press
-            M_COMBO(MODIFIER_KEY, 'v', HAPPY, 250)  // Double Press
+            // Button 1: Undo / Redo
+            M_COMBO('z', DEFAULT, 200),    // Short: Undo (Ctrl+Z / Cmd+Z)
+            M_COMBO('y', HAPPY, 200),      // Long:  Redo (Ctrl+Y / Cmd+Y)
+            M_COMBO_SHIFT('z', HAPPY, 200) // Double: Redo alternate (Ctrl+Shift+Z)
         },
         {
-            // Button 2
-            M_COMBO(MODIFIER_KEY, 'v', HAPPY, 250),  // Press
-            M_COMBO(MODIFIER_KEY, 'z', TIRED, 250),  // Long Press
-            M_COMBO(MODIFIER_KEY, 'y', DEFAULT, 250) // Double Press
+            // Button 2: Copy / Cut
+            M_COMBO('c', HAPPY, 200),  // Short: Copy (Ctrl+C)
+            M_COMBO('x', ANGRY, 200),  // Long:  Cut  (Ctrl+X)
+            M_COMBO('a', DEFAULT, 200) // Double: Select All (Ctrl+A)
         },
         {
-            // Button 3
-            M_COMBO(MODIFIER_KEY, 'z', HAPPY, 250), // Press
-            M_COMBO(MODIFIER_KEY, 'c', TIRED, 250), // Long Press
-            M_COMBO(MODIFIER_KEY, 'x', HAPPY, 250)  // Double Press
+            // Button 3: Paste
+            M_COMBO('v', HAPPY, 200),       // Short: Paste (Ctrl+V)
+            M_COMBO_SHIFT('v', HAPPY, 200), // Long:  Paste Plain Text (Ctrl+Shift+V)
+            M_COMBO('f', DEFAULT, 200)      // Double: Find (Ctrl+F)
         },
         {
-            // Button 4
-            M_COMBO(MODIFIER_KEY, 'y', HAPPY, 250),  // Press
-            M_COMBO(MODIFIER_KEY, 'v', ANGRY, 250),  // Long Press
-            M_COMBO(MODIFIER_KEY, 'z', DEFAULT, 250) // Double Press
+            // Button 4: Save / Quick Actions
+            M_COMBO('s', HAPPY, 300), // Short: Quick Save (Ctrl+S)
+            M_COMBO('w', ANGRY, 300), // Long:  Close Window/Tab (Ctrl+W)
+            M_COMBO('t', HAPPY, 300)  // Double: New Tab (Ctrl+T)
         }},
-    // LAYER_THREE (Customization Engine)
+
+    // -------------------------------------------------------------------------
+    // LAYER THREE: Face Customization Tweak Engine
+    // Encoder Dial: Adjust selected parameter value
+    // -------------------------------------------------------------------------
     {
         {
             // Encoder Button
-            M_NONE,        // Press
-            M_CYCLE_LAYER, // Long Press
-            M_RESET_FACE   // Double Press
+            M_NONE,        // Short:  No action
+            M_CYCLE_LAYER, // Long:   Return to Layer 1
+            M_RESET_FACE   // Double: Reset Eyes Geometry
         },
         {
-            // Button 1
-            M_FACE_MODE(FACE_EDIT_MOOD), // Press
-            M_NONE,                      // Long Press
-            M_NONE                       // Double Press
+            // Button 1: Mood Selector
+            M_FACE_MODE(FACE_EDIT_MOOD), // Short: Select Mood mode
+            M_SET_MOOD(0),               // Long:  Force DEFAULT Mood
+            M_SET_MOOD(1)                // Double: Force HAPPY Mood
         },
         {
-            // Button 2
-            M_FACE_MODE(FACE_EDIT_SPACE), // Press
-            M_NONE,                       // Long Press
-            M_NONE                        // Double Press
+            // Button 2: Eye Spacing
+            M_FACE_MODE(FACE_EDIT_SPACE), // Short: Select Eye Gap mode
+            M_NONE,                       // Long:  Unassigned
+            M_NONE                        // Double: Unassigned
         },
         {
-            // Button 3
-            M_FACE_MODE(FACE_EDIT_RADIUS), // Press
-            M_NONE,                        // Long Press
-            M_NONE                         // Double Press
+            // Button 3: Corner Radius
+            M_FACE_MODE(FACE_EDIT_RADIUS), // Short: Select Corner Radius mode
+            M_NONE,                        // Long:  Unassigned
+            M_NONE                         // Double: Unassigned
         },
         {
-            // Button 4
-            M_FACE_MODE(FACE_EDIT_HEIGHT), // Press
-            M_FACE_MODE(FACE_EDIT_WIDTH),  // Long Press
-            M_NONE                         // Double Press
+            // Button 4: Eye Dimensions
+            M_FACE_MODE(FACE_EDIT_HEIGHT), // Short: Adjust Eye Height
+            M_FACE_MODE(FACE_EDIT_WIDTH),  // Long:  Adjust Eye Width
+            M_SET_MOOD(3)                  // Double: Force ANGRY Mood
         }}};
 
 // --- Layer colors ---
@@ -507,11 +572,19 @@ void sendCombo(uint16_t modifier, char key)
   if (!bk.isConnected())
     return;
 
-  bk.press(modifier);
+  // Split modifier mask if bitwise combinations are passed
+  if (modifier & KEY_LEFT_CTRL)
+    bk.press(KEY_LEFT_CTRL);
+  if (modifier & KEY_LEFT_SHIFT)
+    bk.press(KEY_LEFT_SHIFT);
+  if (modifier & KEY_LEFT_ALT)
+    bk.press(KEY_LEFT_ALT);
+  if (modifier & KEY_LEFT_GUI)
+    bk.press(KEY_LEFT_GUI);
+
   bk.press((uint8_t)key);
-  delay(12);
-  bk.release(modifier);
-  bk.release((uint8_t)key);
+  delay(15);
+  bk.releaseAll();
 }
 
 void executeMacro(Layer l, uint8_t btnIdx, uint8_t evtIdx)
@@ -530,7 +603,7 @@ void executeMacro(Layer l, uint8_t btnIdx, uint8_t evtIdx)
     break;
 
   case ACT_COMBO:
-    sendCombo(MODIFIER_KEY, m.comboChar);
+    sendCombo(m.modifier, m.comboChar);
     break;
 
   case ACT_SET_MOOD:
@@ -558,11 +631,10 @@ void executeMacro(Layer l, uint8_t btnIdx, uint8_t evtIdx)
     currentHeight = 64;
     currentWidth = 64;
     faceMoodIdx = 0;
-    eyes.setSpacebetween(currentSpace);
-    eyes.setBorderradius(currentRadius, currentRadius);
-    eyes.setWidth(currentWidth, currentWidth);
-    eyes.setHeight(currentHeight, currentHeight);
-    eyes.setMood(faceMoods[faceMoodIdx]);
+
+    applyFaceSettings();
+    saveFaceSettings();
+
     flashMood(HAPPY, 500);
     break;
 
@@ -642,13 +714,16 @@ void handleEncoder(int delta)
       eyes.setWidth(currentWidth, currentWidth);
       break;
     }
+
+    saveFaceSettings();
+
     eyes.setPosition(DEFAULT);
     eyes.setCuriosity(false);
     lookUntil = 0;
   }
 }
 
-// --- System Monitors ---
+// --- System monitors ---
 void handleConnection()
 {
   bool connected = bk.isConnected();
@@ -773,14 +848,11 @@ void setup()
 
   eyes.setColors(TFT_WHITE, TFT_BLACK);
 
-  eyes.setAutoblinker(true, 2, 1);
-  eyes.setIdleMode(true, 4, 0);
+  eyes.setAutoblinker(true, 4, 3);
+  eyes.setIdleMode(true, 4, 3);
 
-  // Apply initial custom face geometry
-  eyes.setWidth(currentWidth, currentWidth);
-  eyes.setHeight(currentHeight, currentHeight);
-  eyes.setBorderradius(currentRadius, currentRadius);
-  eyes.setSpacebetween(currentSpace);
+  loadFaceSettings();
+  applyFaceSettings();
 
   eyes.setPosition(DEFAULT);
   eyes.setCuriosity(false);
