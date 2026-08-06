@@ -271,6 +271,7 @@ enum ActionType
   ACT_KEY,
   ACT_MEDIA,
   ACT_COMBO,
+  ACT_WIN_COMBO,
   ACT_SET_MOOD,
   ACT_FACE_MODE,
   ACT_CYCLE_LAYER,
@@ -300,7 +301,7 @@ struct Macro
 #define M_COMBO(c, mood, ms) {ACT_COMBO, 0, nullptr, MODIFIER_KEY, c, mood, ms, 0}
 
 // Combo for special shortcuts (Win/Super)
-#define M_COMBO_SUPER(c, mood, ms) {ACT_COMBO, 0, nullptr, KEY_LEFT_GUI, c, mood, ms, 0}
+#define M_COMBO_SUPER(c, mood, ms) {ACT_WIN_COMBO, 0, nullptr, KEY_LEFT_GUI, c, mood, ms, 0}
 
 // Multi-modifier combo helper (e.g. Ctrl + Shift + Key)
 #define M_COMBO_SHIFT(c, mood, ms) {ACT_COMBO, 0, nullptr, (MODIFIER_KEY | KEY_LEFT_SHIFT), c, mood, ms, 0}
@@ -584,6 +585,18 @@ void sendCombo(uint16_t modifier, char key)
 
   bk.press((uint8_t)key);
   delay(15);
+  bk.releaseAll();
+}
+
+void sendWinCombo(char key) {
+  if (!bk.isConnected()) return;
+
+  bk.press(KEY_LEFT_GUI);
+  delay(25);
+
+  bk.press((uint8_t)key);
+  delay(40);
+
   bk.releaseAll();
 }
 
