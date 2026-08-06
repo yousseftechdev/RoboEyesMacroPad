@@ -10,11 +10,6 @@ Moving back and forth between the keyboard and mouse to click repetitive UI butt
 
 ---
 
-## Demo video
-<video src="https://cdn.hackclub.com/019fd78b-134d-7983-aafd-85b7cd60dbba/VID_20260806_171026-compressed.webm" width="100%" controls muted playsinline></video>
-
----
-
 ## Features & Desk Buddy Behavior
 
 * **3 Active Function Layers:**
