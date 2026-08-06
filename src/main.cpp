@@ -588,8 +588,10 @@ void sendCombo(uint16_t modifier, char key)
   bk.releaseAll();
 }
 
-void sendWinCombo(char key) {
-  if (!bk.isConnected()) return;
+void sendWinCombo(char key)
+{
+  if (!bk.isConnected())
+    return;
 
   bk.press(KEY_LEFT_GUI);
   delay(25);
@@ -617,6 +619,10 @@ void executeMacro(Layer l, uint8_t btnIdx, uint8_t evtIdx)
 
   case ACT_COMBO:
     sendCombo(m.modifier, m.comboChar);
+    break;
+  
+  case ACT_WIN_COMBO:
+    sendWinCombo(m.comboChar);
     break;
 
   case ACT_SET_MOOD:
@@ -968,7 +974,8 @@ void loop()
     logButtonPress(4, 2);
     executeMacro(layer, 4, 2);
   }
-  if (btnCycleLayer.pressedEvent) cycleLayer();
+  if (btnCycleLayer.pressedEvent)
+    cycleLayer();
 
   noInterrupts();
   int rawTicks = encoderRawTicks;
