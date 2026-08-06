@@ -177,7 +177,7 @@ struct Button
   }
 };
 
-Button btnEncoder, btnOne, btnTwo, btnThree, btnFour;
+Button btnEncoder, btnOne, btnTwo, btnThree, btnFour, btnCycleLayer;
 
 // --- Layers ---
 enum Layer : uint8_t
@@ -840,6 +840,7 @@ void setup()
   btnTwo.begin(BTN2_PIN);
   btnThree.begin(BTN3_PIN);
   btnFour.begin(BTN4_PIN);
+  btnCycleLayer.begin(0);
 
   tft.init();
   eyes.begin(60);
@@ -873,6 +874,7 @@ void loop()
   btnTwo.update(now);
   btnThree.update(now);
   btnFour.update(now);
+  btnCycleLayer.update(now);
 
   if (btnEncoder.pressedEvent)
   {
@@ -953,6 +955,7 @@ void loop()
     logButtonPress(4, 2);
     executeMacro(layer, 4, 2);
   }
+  if (btnCycleLayer.pressedEvent) cycleLayer();
 
   noInterrupts();
   int rawTicks = encoderRawTicks;
