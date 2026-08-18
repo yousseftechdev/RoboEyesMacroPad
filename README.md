@@ -1,83 +1,71 @@
 # RoboEyes MacroPad
+
 <p align="center">
-<i>A TTGO T-Display based macropad that doubles as a cute little robot desk buddy.</i><br>
-<img alt="prototype" src="imgs/prototype.jpeg" width="300">
+  <img alt="RoboEyes MacroPad prototype" src="imgs/prototype.jpeg" width="300"><br>
+  <i>A TTGO T-Display macropad with an animated robot display.</i>
 </p>
 
-Moving back and forth between the keyboard and mouse to click repetitive UI buttons gets exhausting fast, and memorizing endless shortcut key combinations is a pain. 
-
-**RoboEyes Macropad** solves this by putting standard macros right at your fingertips while giving your workspace some personality. Built on top of the ESP32 and powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) display library, this macropad doubles as an expressive desk buddy that reacts dynamically to your button presses, layer switches, and system connections.
+RoboEyes MacroPad is a BLE macro keypad built on the ESP32. Powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) library, the display acts as a desk companion that reacts to button presses, layer switches, and battery status.
 
 ---
 
-## Features & Desk Buddy Behavior
+## Features
 
-* **3 Active Function Layers:**
-  * **Layer 1 (Cyan): Media & Navigation** — Control system volume via the dial, skip/play tracks, launch apps, or minimize all windows.
-  * **Layer 2 (Green): Universal Productivity** — Quick access to Copy, Cut, Paste, Plain Text Paste, Undo, Redo, Save, and Window management.
-  * **Layer 3 (Yellow): Live Eye Customization Engine** — Interactively adjust eye spacing, corner radius, height, width, and default mood using the rotary encoder dial.
-* **Expressive Animated Buddy:**
-  * Displays dynamic expressions (**Happy**, **Tired**, **Angry**, **Default**) based on button events.
-  * Look directions follow rotary encoder turns.
-  * Integrated auto-blinking and subtle idle curiosity animations.
-  * Saves eye shape and mood configurations directly to NVS flash memory (`Preferences.h`) so settings persist across reboots.
-* **Multi-Input Gesture Detection:**
-  * Each of the 4 dedicated buttons (plus the rotary encoder click) supports **Short Press**, **Long Press**, and **Double Press** actions—giving you 15 distinct hardware actions per layer.
-* **Battery & System Safety:**
-  * Auto-monitors battery voltage on Pin 34.
-  * Eyes turn **Red** and assume a **Tired** expression when the battery drops low.
-* **Pure Wireless Bluetooth Connectivity:**
-  * Connects directly over Bluetooth LE HID.
+- **3 Function Layers:**
+  - **Layer 1 (Cyan):** Media & volume dial, track switching, window controls.
+  - **Layer 2 (Green):** Standard shortcuts (Copy, Paste, Plain Text Paste, Undo, Redo, Save).
+  - **Layer 3 (Yellow):** Live eye editor (adjust eye size, radius, spacing, and mood via the encoder).
+- **Animated Eyes:** Real-time expressions (Happy, Tired, Angry, Default), idle blinking, and turn-direction animations.
+- **Multi-Input Support:** Short press, long press, and double press per button (15 actions per layer).
 
-> ⚠️ **Note on Hardware Design:** The standard ESP32 (ESP32-D0WD / ESP32-WROOM series) **does not feature native hardware USB OTG/HID capabilities**. Because it lacks USB HID device controller hardware, the micro-USB/Type-C port on board is used strictly for serial programming and power delivery. All keyboard and macro signals are transmitted **exclusively via Bluetooth LE (BLE)**.
+> **Hardware Note:** Standard ESP32 chips (ESP32-D0WD / ESP32-WROOM) do not have native USB HID support. The onboard USB port is strictly for serial flashing and power. Keypresses are sent exclusively over Bluetooth.
 
 ---
 
-## 🛠️ Hardware Requirements & Pinout
+## Hardware & Pinout
 
-### Components
-* ESP32 Development Board (e.g., TTGO T-Display or ESP32 with SPI TFT)
-* TFT Display compatible with `TFT_eSPI`
-* 1x Rotary Encoder (EC11 with push switch)
-* 4x Tactile Push Buttons
-* Battery & Divider circuit (connected to Pin 34)
+### Required Components
+- ESP32 dev board (TTGO T-Display or any ESP32 with SPI TFT)
+- TFT Display compatible with `TFT_eSPI`
+- 1x EC11 Rotary Encoder with push switch
+- 4x Tactile buttons
+- Voltage divider circuit (connected to Pin 34 for battery monitoring)
 
-### Default Pin Mapping
+### Pin Mapping
 
 | Peripheral | Component Pin | ESP32 GPIO |
 | :--- | :--- | :--- |
 | **Rotary Encoder** | Channel A | `GPIO 25` |
 | | Channel B | `GPIO 26` |
-| | Switch (Button) | `GPIO 32` |
-| **Tactile Buttons** | Button 1 | `GPIO 27` |
+| | Switch | `GPIO 32` |
+| **Buttons** | Button 1 | `GPIO 27` |
 | | Button 2 | `GPIO 33` |
 | | Button 3 | `GPIO 12` |
 | | Button 4 | `GPIO 13` |
-| **Display / System** | TFT Backlight | `GPIO 4` |
+| **System** | TFT Backlight | `GPIO 4` |
 | | Battery Sense | `GPIO 34` |
-| | Debug Toggle | `GPIO 35` (Hold LOW on boot for Serial logs) |
+| | Debug Toggle | `GPIO 35` (Hold LOW on boot for logs) |
 
 ---
 
-## ⚙️ Software Dependencies
+## Software Dependencies
 
-Before flashing, install the following libraries in your Arduino IDE / PlatformIO environment:
+Install the following libraries before building:
 
-1. **`TFT_eSPI`** — Hardware-accelerated graphics library.
-2. **`RoboEyesTFT`** — Dynamic animated eyes engine for TFT displays ([GitHub Repo](https://github.com/yousseftechdev/RoboEyesTFT)).
-3. **`ESP32-BLE-Keyboard`** — Bluetooth LE HID Keyboard emulator for ESP32.
-4. **`Preferences`** — Standard ESP32 non-volatile storage library (built into the ESP32 Arduino Core).
+- [`TFT_eSPI`](https://github.com/Bodmer/TFT_eSPI)
+- [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT)
+- `ESP32-BLE-Keyboard`
+- `Preferences` (built into ESP32 Arduino Core)
 
 ---
 
-## ⌨️ How to Customize Keymaps & Macros
+## Keymaps & Customization
 
-All button bindings are configured in a structured 3D matrix inside the code: `keyMap[LAYER][BUTTON_INDEX][EVENT_TYPE]`.
+Bindings live in a 3D array in the code: `keyMap[LAYER][BUTTON_INDEX][EVENT_TYPE]`.
 
-### Keymap Matrix Breakdown
-* **Layers:** `0` (Layer 1), `1` (Layer 2), `2` (Layer 3)
-* **Button Indices:** `0` (Encoder Switch), `1` (Btn 1), `2` (Btn 2), `3` (Btn 3), `4` (Btn 4)
-* **Event Indices:** `0` (Short Press), `1` (Long Press), `2` (Double Press)
+- **Layers:** `0` (Layer 1), `1` (Layer 2), `2` (Layer 3)
+- **Buttons:** `0` (Encoder Switch), `1` (Btn 1), `2` (Btn 2), `3` (Btn 3), `4` (Btn 4)
+- **Events:** `0` (Short Press), `1` (Long Press), `2` (Double Press)
 
 ### Macro Helper Definitions
 
@@ -100,18 +88,19 @@ M_COMBO_SUPER('d', mood, duration_ms) // Win + D
 M_COMBO_SHIFT('z', mood, duration_ms) // Ctrl + Shift + Z
 ```
 
-#### Example: Modifying a Shortcut
-To change Button 1 (Short Press) on Layer 2 to lock your workstation (`Win + L`):
-Find the entry in `keyMap`:
+### Examples
+
+**Change Button 1 (Short Press) on Layer 2 to Lock System (`Win + L`):**
 ```cpp
-// BEFORE (Undo):
+// Change this:
 M_COMBO('z', DEFAULT, 200)
 
-// AFTER (Win + L to Lock OS):
+// To this:
 M_COMBO_SUPER('l', TIRED, 400)
 ```
 
-To change the default modifier key globally from Ctrl to Cmd (for macOS), modify line 27:
+**Set Modifier Key to Command for macOS:**
+Change line 27:
 ```cpp
-#define MODIFIER_KEY KEY_LEFT_GUI // Use macOS Command key
+#define MODIFIER_KEY KEY_LEFT_GUI
 ```
