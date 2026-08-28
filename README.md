@@ -5,7 +5,7 @@
   <i>A TTGO T-Display macropad with an animated robot display.</i>
 </p>
 
-RoboEyes MacroPad is a BLE macro keypad built on the ESP32. Powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) library, the display acts as a desk companion that reacts to button presses, layer switches, and battery status.
+So, RoboEyes MacroPad is basically a BLE macro keypad built on the ESP32. It’s powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) library, which makes the display act like a desk companion that actually reacts when you press buttons, switch layers, or when the battery is dying (which happens way too fast, tbh).
 
 ---
 
@@ -13,55 +13,36 @@ RoboEyes MacroPad is a BLE macro keypad built on the ESP32. Powered by the [`Rob
 
 - **3 Function Layers:**
   - **Layer 1 (Cyan):** Media & volume dial, track switching, window controls.
-  - **Layer 2 (Green):** Standard shortcuts (Copy, Paste, Plain Text Paste, Undo, Redo, Save).
-  - **Layer 3 (Yellow):** Live eye editor (adjust eye size, radius, spacing, and mood via the encoder).
-- **Animated Eyes:** Real-time expressions (Happy, Tired, Angry, Default), idle blinking, and turn-direction animations.
-- **Multi-Input Support:** Short press, long press, and double press per button (15 actions per layer).
-
-> **Hardware Note:** Standard ESP32 chips (ESP32-D0WD / ESP32-WROOM) do not have native USB HID support. The onboard USB port is strictly for serial flashing and power. Keypresses are sent exclusively over Bluetooth.
+  - **Layer 2 (Green):** Standard shortcuts (Copy, Paste, Plain Text Paste, Undo, Redo, Save). The bread and butter stuff.
+  - **Layer 3 (Yellow):** Live eye editor (adjust eye size, radius, spacing, and mood via the encoder). Because why not customize your robot's face?
+- **Animated Eyes:** Real-time expressions (Happy, Tired, Angry, Default), idle blinking, and turn-direction animations. It blinks when you're not looking, I swear.
+- **Multi-Input Support:** Short press, long press, and double press per button (15 actions per layer). That’s a lot of clicks.
 
 ---
 
-## Hardware & Pinout
+## Hardware
 
 ### Required Components
 - ESP32 dev board (TTGO T-Display or any ESP32 with SPI TFT)
 - TFT Display compatible with `TFT_eSPI`
 - 1x EC11 Rotary Encoder with push switch
 - 4x Tactile buttons
-- Voltage divider circuit (connected to Pin 34 for battery monitoring)
-
-### Pin Mapping
-
-| Peripheral | Component Pin | ESP32 GPIO |
-| :--- | :--- | :--- |
-| **Rotary Encoder** | Channel A | `GPIO 25` |
-| | Channel B | `GPIO 26` |
-| | Switch | `GPIO 32` |
-| **Buttons** | Button 1 | `GPIO 27` |
-| | Button 2 | `GPIO 33` |
-| | Button 3 | `GPIO 12` |
-| | Button 4 | `GPIO 13` |
-| **System** | TFT Backlight | `GPIO 4` |
-| | Battery Sense | `GPIO 34` |
-| | Debug Toggle | `GPIO 35` (Hold LOW on boot for logs) |
 
 ---
 
 ## Software Dependencies
 
-Install the following libraries before building:
+Install the following libraries before building (or it won't work, obviously):
 
 - [`TFT_eSPI`](https://github.com/Bodmer/TFT_eSPI)
 - [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT)
 - `ESP32-BLE-Keyboard`
-- `Preferences` (built into ESP32 Arduino Core)
 
 ---
 
 ## Keymaps & Customization
 
-Bindings live in a 3D array in the code: `keyMap[LAYER][BUTTON_INDEX][EVENT_TYPE]`.
+Bindings live in a 3D array in the code: `keyMap[LAYER][BUTTON_INDEX][EVENT_TYPE]`. It looks scary but it’s fine.
 
 - **Layers:** `0` (Layer 1), `1` (Layer 2), `2` (Layer 3)
 - **Buttons:** `0` (Encoder Switch), `1` (Btn 1), `2` (Btn 2), `3` (Btn 3), `4` (Btn 4)
