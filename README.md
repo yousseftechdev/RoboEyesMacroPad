@@ -5,83 +5,71 @@
   <i>A TTGO T-Display macropad with an animated robot display.</i>
 </p>
 
-So, RoboEyes MacroPad is basically a BLE macro keypad built on the ESP32. It’s powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) library, which makes the display act like a desk companion that actually reacts when you press buttons, switch layers, or when the battery is dying (which happens way too fast, tbh).
+So, RoboEyes MacroPad is basically a bluetooth macro keypad built on the ESP32. It’s powered by the [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT) library, which makes the display act like a desk companion that actually reacts when you press buttons, switch layers, or when the battery is dying (which happens way too fast, tbh).
 
 ---
 
-## Features
+## What is this thing?
+As said before, it's a bluetooth macropad with a cute robot face on it, by default, it has 4 switches, but more can be added as I designed the codebase to be very modular, the switch actions are also customizable, the encoder can be used for volume, arrow keys for scrolling, or customizing the robot face.
 
-- **3 Function Layers:**
-  - **Layer 1 (Cyan):** Media & volume dial, track switching, window controls.
-  - **Layer 2 (Green):** Standard shortcuts (Copy, Paste, Plain Text Paste, Undo, Redo, Save). The bread and butter stuff.
-  - **Layer 3 (Yellow):** Live eye editor (adjust eye size, radius, spacing, and mood via the encoder). Because why not customize your robot's face?
-- **Animated Eyes:** Real-time expressions (Happy, Tired, Angry, Default), idle blinking, and turn-direction animations. It blinks when you're not looking, I swear.
-- **Multi-Input Support:** Short press, long press, and double press per button (15 actions per layer). That’s a lot of clicks.
+The robot face will look around while you work and be affected by your interactions with the switches and encoder.
 
 ---
 
-## Hardware
-
-### Required Components
-- ESP32 dev board (TTGO T-Display or any ESP32 with SPI TFT)
-- TFT Display compatible with `TFT_eSPI`
-- 1x EC11 Rotary Encoder with push switch
-- 4x Tactile buttons
+## How does it work?
+It works off of a TTGO ESP32 T-Display, the display is initialized with the `TFT_eSPI` library, the robot face is drawn by a custom lirary that i've made previously called [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT), and the bluetooth commands are managed by the `ESP32-BLE-Keyboard`.
 
 ---
 
-## Software Dependencies
-
-Install the following libraries before building (or it won't work, obviously):
-
-- [`TFT_eSPI`](https://github.com/Bodmer/TFT_eSPI)
-- [`RoboEyesTFT`](https://github.com/yousseftechdev/RoboEyesTFT)
-- `ESP32-BLE-Keyboard`
+## Actions
+You can press, double press, and long press any of the switches including the encoder switch.
+To change layers/control modes, the default action is to long press the encoder switch, but that's customizable through the macro table in the code.
 
 ---
 
-## Keymaps & Customization
+## Customization
+You can customize the robot's face in the Layer 3/Yellow mode, press the buttons to choose which characteristic you want to change, whether it be the default facial expression, the border radius of the eyes, the distance between them, or even their width and height!
 
-Bindings live in a 3D array in the code: `keyMap[LAYER][BUTTON_INDEX][EVENT_TYPE]`. It looks scary but it’s fine.
+Hold the width and height button to change which one your editing.
 
-- **Layers:** `0` (Layer 1), `1` (Layer 2), `2` (Layer 3)
-- **Buttons:** `0` (Encoder Switch), `1` (Btn 1), `2` (Btn 2), `3` (Btn 3), `4` (Btn 4)
-- **Events:** `0` (Short Press), `1` (Long Press), `2` (Double Press)
+To customize the macros, dig in the code base until you find the macro table/keymap grid at line 318, inside this 3D array you'll be able to decide what each action does, follow the comments and you'll know what to do.
+![screenshot 2](imgs/screenshot2.png)
 
-### Macro Helper Definitions
+---
 
-You can easily assign custom actions using the built-in helper macros:
+## Setup guide
+This is a pretty straightforward build, but it does need a little wiring and a bit of patience if it’s your first ESP32/macropad project. The good news is the code is already set up for the TTGO T-Display, so once the hardware is connected and the firmware is flashed, you’re mostly just tweaking the keymap and robot face settings.
 
-```cpp
-// Send a single key press with an optional mood reaction
-M_KEY(key, mood, duration_ms)
+You’ll need:
+- A TTGO T-Display ESP32 board
+- 4 momentary buttons/switches
+- 1 rotary encoder with switch
+- A common ground shared between the board and the buttons/encoder
+- A battery or USB power source
+- Soldering setup and some jumper wires
 
-// Send a media key (e.g., KEY_MEDIA_PLAY_PAUSE, KEY_MEDIA_VOLUME_UP)
-M_MEDIA(media_key, mood, duration_ms)
+Wiring is pretty simple:
+- The display is already mounted on the TTGO board, so you only need to wire the buttons and encoder to the GPIO pins defined in the code.
+- The four switch inputs are on pins 27, 33, 12, and 13, the other leg of the buttons should be connected to a common ground.
+- The encoder A/B pins are 25 and 26, and the encoder switch is on pin 32.
 
-// Send a modifier shortcut (defaults to Ctrl on Win/Linux or Cmd on macOS)
-M_COMBO('c', mood, duration_ms) // Ctrl + C
+If you’re building this on a perfboard or custom PCB, keep the button wiring neat and make sure the grounds are all tied together. The ESP32 is pretty tolerant, but bad grounding and long loose wires can cause weird button glitches and random encoder jumps.
 
-// Send a Windows/Super key shortcut (Win + Key)
-M_COMBO_SUPER('d', mood, duration_ms) // Win + D
+Once the hardware is ready, the firmware install is pretty normal:
+- Open the project in VS Code with the PlatformIO extension installed.
+- Make sure the project folder is recognized as a PlatformIO project.
+- Connect the TTGO board to your computer with USB.
+- In PlatformIO, build the project first to make sure the dependencies resolve cleanly.
+- Upload the firmware to the board.
+- If the board refuses to flash, try holding the boot button while initiating upload, then release it once the upload starts. This is a common ESP32 quirk.
 
-// Send a multi-modifier shortcut (Ctrl + Shift + Key)
-M_COMBO_SHIFT('z', mood, duration_ms) // Ctrl + Shift + Z
-```
+After flashing:
+From there, you can customize the macros in the keymap and tweak the robot behavior in the layer system. The default layer is a media layer, the second layer is productivity shortcuts, and the third layer is the face customization mode. Long-pressing the encoder switch is the default way to cycle layers, and the face reacts to your button presses and encoder movements so it feels a little alive instead of just being a screen on a board.
 
-### Examples
+If you want to make it feel more like yours, start with the macro table and the face editing layer. That’s where most of the personality lives.
 
-**Change Button 1 (Short Press) on Layer 2 to Lock System (`Win + L`):**
-```cpp
-// Change this:
-M_COMBO('z', DEFAULT, 200)
+---
 
-// To this:
-M_COMBO_SUPER('l', TIRED, 400)
-```
-
-**Set Modifier Key to Command for macOS:**
-Change line 27:
-```cpp
-#define MODIFIER_KEY KEY_LEFT_GUI
-```
+## Connecting
+Just open the bluetooth settings on your computer and pair with it, once connected the robot will appear happy, when disconnected the robot will get sad, that's about it!
+The device name entry will show `RoboEyes Macropad`, you can also change that in the code!
